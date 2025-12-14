@@ -1,0 +1,7 @@
+{
+  "name": "MicroFinanzas Pro VF14 PA FIREBASE X",
+  "description": "Professional credit evaluation system for MIPYME sector",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
