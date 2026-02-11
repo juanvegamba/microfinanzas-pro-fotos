@@ -21,6 +21,7 @@ import SectionSix from './components/SectionSix';
 import SectionSeven from './components/SectionSeven';
 import SectionEight from './components/SectionEight';
 import SectionNine from './components/SectionNine';
+import SectionTen from './components/SectionTen';
 
 // Initial Data Structure
 const initialClientData: ClientData = {
@@ -282,20 +283,39 @@ function App() {
     }));
   };
 
-  const handleSave = async (silent = false) => {
+  const handleDecision = async (decision: 'Aprobado' | 'Rechazado') => {
+    if (!user) return;
+
+    const updatedData: ClientData = {
+        ...clientData,
+        review: {
+            ...clientData.review,
+            committeeDecision: decision,
+            approvalDate: new Date().toISOString(),
+            approverNames: user.displayName || user.email,
+        }
+    };
+    setClientData(updatedData);
+    await handleSave(true, updatedData);
+    alert(`Decisión '${decision}' guardada.`);
+  };
+
+  const handleSave = async (silent = false, dataToSave: ClientData | null = null) => {
     if (!user) {
         console.error("Save attempted without authenticated user");
         return;
     }
+    
+    const data = dataToSave || clientData;
 
     try {
       let docId = activeDocId;
 
       if (!docId) {
-        if (clientData.operationNumber && String(clientData.operationNumber).trim() !== '') {
-           docId = String(clientData.operationNumber).trim();
-        } else if (clientData.identityDocument && String(clientData.identityDocument).trim() !== '') {
-           docId = String(clientData.identityDocument).trim();
+        if (data.operationNumber && String(data.operationNumber).trim() !== '') {
+           docId = String(data.operationNumber).trim();
+        } else if (data.identityDocument && String(data.identityDocument).trim() !== '') {
+           docId = String(data.identityDocument).trim();
         } else {
            docId = "borrador_" + Date.now();
         }
@@ -305,13 +325,13 @@ function App() {
       const docRef = doc(db, "applications", docId!);
       
       const fullPayload = {
-        ...clientData,
+        ...data,
         userId: user.uid || auth.currentUser?.uid || "unknown_user",
         userRegion: user.region ?? 0, 
         userAgency: user.agencia ?? 0,
         lastModified: new Date().toISOString(),
         updatedBy: user.email,
-        appVersion: "1.0.2-stable" 
+        appVersion: "1.0.3-summary-fix" 
       };
 
       const cleanPayload = JSON.parse(JSON.stringify(fullPayload));
@@ -340,7 +360,9 @@ function App() {
     if (isTabLocked) return;
     if (newStep === currentStep) return;
     
-    await handleSave(true); 
+    if (currentStep !== 10) { // Don't save on final summary step
+        await handleSave(true); 
+    }
     
     setCurrentStep(newStep);
     window.scrollTo(0, 0);
@@ -400,6 +422,7 @@ function App() {
       case 7: return <SectionSeven data={clientData} updateData={updateClientData} setTabLocked={setTabLocked} activeDocId={activeDocId} />;
       case 8: return <SectionEight data={clientData} updateData={updateClientData} setTabLocked={setTabLocked} activeDocId={activeDocId} />;
       case 9: return <SectionNine data={clientData} updateData={updateClientData} />;
+      case 10: return <SectionTen data={clientData} onDecision={handleDecision} />;
       default: return <div>Sección no encontrada</div>;
     }
   };
@@ -454,7 +477,7 @@ function App() {
             <div className="pb-24">
               {renderFormSection()}
               
-              {currentStep < 9 && (
+              {currentStep < 10 && (
                 <div className="max-w-5xl mx-auto px-6 mt-8">
                   <div className="flex justify-between gap-4 pt-6 border-t border-gray-300">
                     <button 
