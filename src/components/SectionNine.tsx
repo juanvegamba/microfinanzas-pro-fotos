@@ -15,6 +15,8 @@ interface SectionNineProps {
   updateData: (field: keyof ClientData, value: any) => void;
 }
 
+// QA HELPER: Safe Number conversion to prevent NaN propagation
+// PRESERVATION CHECK: Ensures logic (val * val) behaves exactly as before but safe from undefined
 const safeNum = (val: any): number => {
   if (typeof val === 'number') return val;
   if (!val) return 0;
@@ -34,6 +36,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
     });
   };
 
+  // Initialize committee values if empty
   useEffect(() => {
     if (data.review && !data.review.approvedAmount && data.loanAmount) {
       const realGuaranteesText = (data.realGuarantees || []).map(g => 
@@ -60,6 +63,9 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
     }
   }, []);
 
+  // ==========================================
+  // 1. CALCULATION ENGINE (REFACTOR: Safe Mode)
+  // ==========================================
   const calcType = (amount: number | '', freq: number | '') => safeNum(amount) * safeNum(freq);
   const baseMonthlySales = calcType(data.salesGood.amount, data.salesGood.frequency) + calcType(data.salesRegular.amount, data.salesRegular.frequency) + calcType(data.salesBad.amount, data.salesBad.frequency);
   const annualSales = baseMonthlySales * 12;
@@ -81,6 +87,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
     safeNum(data.familyHealth) + 
     safeNum(data.familyOther);
   
+  // Exclude consolidated debts from the monthly payment calculation
   const totalExistingDebtPayment = (data.existingDebts || [])
     .filter(d => !d.consolidate)
     .reduce((sum, item) => sum + safeNum(item.monthlyQuota), 0);
@@ -93,7 +100,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
 
   const loanAmt = safeNum(data.loanAmount);
   const annualRate = safeNum(data.loanInterestRate);
-  const termMonths = safeNum(data.loanTerm) || 24; 
+  const termMonths = safeNum(data.loanTerm) || 24; // Default to 24 if 0 to prevent division by zero
   const monthlyRate = annualRate / 100 / 12;
   
   const calculatePmt = () => { 
@@ -178,7 +185,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
         totalBusinessFixedExpenses + 
         variableExpense + 
         totalFamilyExpenses + 
-        totalExistingDebtPayment + 
+        totalExistingDebtPayment + // Ensure consolidated debts are excluded here
         disbursementExit + 
         safeNum(data.plannedInvestment) + 
         newLoanPayment;
@@ -209,6 +216,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
     return projection;
   }, [baseMonthlySales, data, estimatedNewQuota, loanAmt, monthlyRate, termMonths, totalBusinessFixedExpenses, totalExistingDebtPayment, totalFamilyExpenses]);
 
+  // Chart Data
   const chartPoints = cashFlowProjection.map((p, i) => {
      return {
          month: p.month,
@@ -221,8 +229,9 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
      }
   });
 
+  // Determine scales for SVG Chart
   const allValues = chartPoints.flatMap(p => [p.income, p.expenses, p.sdn, p.debt, p.flow]);
-  const maxVal = Math.max(...allValues, 1000) * 1.1; 
+  const maxVal = Math.max(...allValues, 1000) * 1.1; // Add 10% padding
   const minVal = Math.min(...allValues, 0);
   const chartHeight = 300;
   const chartWidth = 800;
@@ -247,6 +256,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
   const totalOtherAssets = (data.otherAssets || []).reduce((sum, item) => sum + safeNum(item.estimatedValue), 0);
   const grandTotalAssets = totalInventoryValue + totalRealEstate + totalVehicles + totalOtherAssets;
 
+  // Specific Asset Breakdowns
   const totalAssetsFixed = totalRealEstate + totalVehicles; 
   const totalAssetsOther = totalOtherAssets; 
 
@@ -269,6 +279,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
   const characterScorePercent = Math.max(0, (totalCharacterScore / 11) * 100);
   const charStrokeDashArray = `${(characterScorePercent / 100) * 126} 126`;
 
+  // --- ADVANCED INDICATORS (Calculated for Deep Analysis) ---
   const totalDebtPostLoan = totalLiabilities + loanAmt;
   const totalAssetsPostLoan = grandTotalAssets + loanAmt; 
   
@@ -279,6 +290,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
   const leverageEquity = netWorth > 0 ? (totalDebtPostLoan / netWorth) * 100 : 999; 
   const leverageAssets = totalAssetsPostLoan > 0 ? (totalDebtPostLoan / totalAssetsPostLoan) * 100 : 999; 
 
+  // --- ALERTS ---
   const alerts: {type: string, msg: string}[] = [];
   if (ratioInvTotal > 100) alerts.push({ type: 'Riesgo', msg: 'Deuda Total supera Valor Inventario' });
   if (ratioSalesTotal > 0.5) alerts.push({ type: 'Riesgo', msg: 'Deuda Total > 6 meses de venta' });
@@ -286,6 +298,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
   if ((data.housingType === 'Alquilado' || data.businessPremiseType === 'Alquilado') && (!data.expensesRent || data.expensesRent === 0)) alerts.push({ type: 'Gastos', msg: 'Alquiler sin gasto registrado.' });
 
   const generateDebtAnalysis = async () => {
+    if (!process.env.API_KEY) { alert("API Key no configurada."); return; }
     setAiLoading(prev => ({ ...prev, debt: true }));
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -335,6 +348,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
   };
 
   const generateSixCsAnalysis = async () => {
+    if (!process.env.API_KEY) { alert("API Key no configurada."); return; }
     setAiLoading(prev => ({ ...prev, full: true }));
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -388,6 +402,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
         <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded">Expediente Completo</span>
       </div>
 
+      {/* 1. Resumen Datos Generales */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
          <h3 className="text-lg font-bold text-brand-primary mb-4 border-b pb-2 flex items-center">
            <FileText className="w-5 h-5 mr-2"/> 1. Resumen de Datos Generales
@@ -431,6 +446,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
          </div>
       </div>
 
+      {/* 2. Resumen Empresa */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
          <h3 className="text-lg font-bold text-brand-primary mb-4 border-b pb-2 flex items-center">
            <Briefcase className="w-5 h-5 mr-2"/> 2. Resumen de Empresa
@@ -471,6 +487,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
          </div>
       </div>
 
+      {/* 3. Análisis de Capacidad de Pago */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
          <h3 className="text-lg font-bold text-brand-primary mb-4 border-b pb-2 flex items-center">
            <DollarSign className="w-5 h-5 mr-2"/> 3. Análisis de Capacidad de Pago
@@ -560,6 +577,9 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
              <div className="text-xs text-blue-700">Basado en el margen de seguridad del SDN, plazo y tasa del crédito actual.</div>
         </div>
 
+        {/* --- ADDED SECTIONS FROM SECTION 3 --- */}
+        
+        {/* A. Resumen Financiero (Calculado) */}
         <div className="mt-8 bg-gray-50 p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
             <h3 className="text-sm font-bold text-brand-primary mb-4 flex items-center uppercase border-b pb-2">
                 <List className="w-4 h-4 mr-2" /> Resumen Financiero (Calculado)
@@ -586,6 +606,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
             </div>
         </div>
 
+        {/* B. Flujo de Caja Proyectado */}
         <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden break-inside-avoid">
             <h3 className="text-sm font-bold text-brand-primary p-4 flex items-center uppercase border-b bg-gray-50">
                 <Table className="w-4 h-4 mr-2" /> Flujo de Caja Proyectado (Detallado Mensual)
@@ -647,6 +668,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
             </div>
         </div>
 
+        {/* C. Evolución del Flujo de Caja Mensual (Chart) */}
         <div className="mt-8 p-4 border border-gray-200 rounded-lg bg-white">
              <h4 className="text-sm font-bold text-gray-800 text-left mb-4">Evolución del Flujo de Caja Mensual</h4>
              <div className="flex justify-center space-x-4 text-[10px] mb-4">
@@ -656,10 +678,12 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
              </div>
              <div className="relative h-[200px] w-full group">
                  <svg className="w-full h-full overflow-visible" viewBox={`0 0 800 300`} preserveAspectRatio="none">
+                     {/* Grid Lines */}
                      {[0, 0.5, 1].map(pct => (
                        <line key={pct} x1="0" y1={300 * pct} x2={800} y2={300 * pct} stroke="#e5e7eb" strokeWidth="1" />
                      ))}
                      
+                     {/* Charts Logic reused from Section 3 but simplified */}
                      {(() => {
                         const maxVal = Math.max(...chartPoints.flatMap(p => [p.income, p.expenses, p.flow]), 1000) * 1.1;
                         const minVal = Math.min(...chartPoints.flatMap(p => [p.income, p.expenses, p.flow]), 0);
@@ -675,6 +699,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
                                 <polyline points={incomePoints} fill="none" stroke="#4ade80" strokeWidth="2" />
                                 <polyline points={expensePoints} fill="none" stroke="#fb923c" strokeWidth="2" />
                                 <polyline points={flowPoints} fill="none" stroke="#3b82f6" strokeWidth="3" />
+                                {/* Y Axis Labels */}
                                 <text x="-35" y="10" fontSize="10" fill="#9ca3af">{maxVal.toLocaleString()}</text>
                                 <text x="-35" y="290" fontSize="10" fill="#9ca3af">{minVal.toLocaleString()}</text>
                             </>
@@ -691,6 +716,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
 
       </div>
 
+      {/* 4. Inventario y Activos */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
          <h3 className="text-lg font-bold text-brand-primary mb-4 border-b pb-2 flex items-center">
            <ShoppingBag className="w-5 h-5 mr-2"/> Inventario y Activos
@@ -718,6 +744,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
          </div>
       </div>
 
+      {/* 5. Garantías */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
          <h3 className="text-lg font-bold text-brand-primary mb-4 border-b pb-2 flex items-center">
            <Shield className="w-5 h-5 mr-2"/> Garantías
@@ -749,6 +776,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
          </div>
       </div>
 
+      {/* 6. Carácter */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
          <h3 className="text-lg font-bold text-brand-primary mb-4 border-b pb-2 flex items-center">
            <ClipboardCheck className="w-5 h-5 mr-2"/> Carácter
@@ -772,6 +800,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
          </div>
       </div>
 
+      {/* 7. Fotos */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
          <h3 className="text-lg font-bold text-brand-primary mb-4 border-b pb-2 flex items-center">
            <Camera className="w-5 h-5 mr-2"/> Fotos
@@ -786,6 +815,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
          </div>
       </div>
 
+      {/* 8. Supervisión */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
          <h3 className="text-lg font-bold text-brand-primary mb-4 border-b pb-2 flex items-center">
            <Store className="w-5 h-5 mr-2"/> 8. Supervisión
@@ -819,12 +849,14 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
           </div>
       )}
 
+      {/* 9. BALANCE FINANCIERO (DISEÑO SOLICITADO) */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
          <h3 className="text-lg font-bold text-brand-primary mb-6 border-b pb-2 flex items-center">
            <Scale className="w-5 h-5 mr-2"/> 9. Balance Financiero
          </h3>
          
          <div className="flex flex-col lg:flex-row gap-8 mb-8">
+            {/* LEFT: DATA LIST */}
             <div className="w-full lg:w-2/5 border border-gray-200 rounded-lg p-4 bg-gray-50">
                 <h4 className="font-bold text-sm text-gray-700 mb-3 border-b border-gray-300 pb-2">Datos del Balance General Estimado</h4>
                 
@@ -850,9 +882,11 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
                 </div>
             </div>
 
+            {/* RIGHT: CHART (Specific Layout from Screenshot) */}
             <div className="w-full lg:w-3/5 border border-gray-200 rounded-lg p-6 flex flex-col justify-center items-center">
                 <h4 className="font-bold text-sm text-gray-700 mb-6">Gráfico de Estructura Financiera</h4>
                 <div className="flex items-end justify-center gap-8 h-[200px] w-full px-8">
+                    {/* 1. Activos Bar */}
                     <div className="flex flex-col items-center group w-16">
                        <span className="text-xs font-bold mb-1 text-gray-700">Q{(grandTotalAssets/1000).toFixed(1)}k</span>
                        <div 
@@ -862,6 +896,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
                        <span className="text-xs text-gray-600 mt-2">Activos</span>
                     </div>
 
+                    {/* 2. Pasivos Bar */}
                     <div className="flex flex-col items-center group w-16">
                        <span className="text-xs font-bold mb-1 text-gray-700">Q{(totalLiabilities/1000).toFixed(1)}k</span>
                        <div 
@@ -871,6 +906,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
                        <span className="text-xs text-gray-600 mt-2">Pasivos</span>
                     </div>
 
+                    {/* 3. Nueva Deuda Bar (Prominent) */}
                     <div className="flex flex-col items-center group w-20">
                        <span className="text-xs font-bold mb-1 text-black">Q{(loanAmt/1000).toFixed(1)}k</span>
                        <div 
@@ -886,6 +922,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
          <h4 className="font-bold text-sm text-gray-800 mb-3">Análisis de Endeudamiento y Apalancamiento</h4>
          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
              
+             {/* INDICATOR BOX 1: Blue */}
              <div className="bg-blue-50 border border-blue-100 rounded-md p-3">
                  <div className="text-center font-bold text-xs text-blue-900 uppercase mb-2 border-b border-blue-200 pb-1">Cobertura sobre Inventario</div>
                  <div className="flex justify-between text-xs mb-1">
@@ -898,6 +935,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
                  </div>
              </div>
 
+             {/* INDICATOR BOX 2: Green */}
              <div className="bg-green-50 border border-green-100 rounded-md p-3">
                  <div className="text-center font-bold text-xs text-green-900 uppercase mb-2 border-b border-green-200 pb-1">Cobertura sobre Ventas (Años)</div>
                  <div className="flex justify-between text-xs mb-1">
@@ -910,6 +948,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
                  </div>
              </div>
 
+             {/* INDICATOR BOX 3: Yellow */}
              <div className="bg-yellow-50 border border-yellow-100 rounded-md p-3">
                  <div className="text-center font-bold text-xs text-yellow-900 uppercase mb-2 border-b border-yellow-200 pb-1">Apalancamiento</div>
                  <div className="flex justify-between text-xs mb-1">
@@ -923,6 +962,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
              </div>
          </div>
 
+         {/* IA SECTION (Stacked Vertically) */}
          <div className="bg-purple-50 p-4 rounded border border-purple-100 mt-8">
              <div className="flex justify-between items-center mb-4">
                 <h4 className="font-bold text-sm text-purple-800 flex items-center"><BrainCircuit className="w-4 h-4 mr-2"/> Análisis IA (Endeudamiento & 6 C's)</h4>
@@ -933,6 +973,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
              </div>
              
              <div className="space-y-6">
+                {/* Debt Analysis Block */}
                 <div>
                    <div className="text-xs font-bold text-purple-700 mb-2">Análisis de Endeudamiento Post-Crédito</div>
                    <div className="w-full text-xs p-4 bg-white border rounded whitespace-pre-wrap leading-relaxed shadow-sm min-h-[80px]">
@@ -940,6 +981,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
                    </div>
                 </div>
 
+                {/* 6 C's Analysis Block */}
                 <div>
                    <div className="text-xs font-bold text-purple-700 mb-2">Análisis Detallado de las 6 C's del Crédito</div>
                    <div className="w-full text-xs p-4 bg-white border rounded whitespace-pre-wrap leading-relaxed shadow-sm min-h-[150px]">
@@ -951,6 +993,7 @@ const SectionNine: React.FC<SectionNineProps> = ({ data, updateData }) => {
 
       </div>
 
+      {/* 10. Comité */}
       <div className="bg-blue-50 p-6 rounded-lg shadow-sm border border-blue-200 break-inside-avoid">
          <h3 className="text-lg font-bold text-blue-900 mb-4 border-b border-blue-200 pb-2 flex items-center">
            <Users className="w-5 h-5 mr-2"/> 10. Opinión y Comité

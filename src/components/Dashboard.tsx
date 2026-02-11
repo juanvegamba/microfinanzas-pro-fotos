@@ -31,33 +31,25 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onCreateNew, onSelectApplic
         } else if (user.rol === 'jefe_agencia') {
           q = query(appsRef, where("userAgency", "==", user.agencia));
         } else {
-          // Usuario normal
-          // Assuming we store userId in the application document as 'userId'
-          // If creating new app, we must ensure this field is saved (See App.tsx changes)
-          // For demo purposes, using a broad query might be safer if userId isn't populated yet on old records, 
-          // but per prompt instructions we use the logic.
-          // Note: Compound queries might need index in Firestore console.
           q = query(appsRef, where("userId", "==", user.uid));
         }
 
         const querySnapshot = await getDocs(q);
-        const apps: ApplicationSummary[] = [];
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          apps.push({
-            id: doc.id,
-            fullName: data.fullName || 'Sin Nombre',
-            identityDocument: data.identityDocument || '---',
-            loanAmount: data.loanAmount || 0,
-            date: data.lastModified ? new Date(data.lastModified).toLocaleDateString() : '---',
-            status: data.review?.committeeDecision || 'En Proceso',
-            userId: data.userId,
-            userRegion: data.userRegion,
-            userAgency: data.userAgency
-          });
+        const apps = querySnapshot.docs.map(doc => {
+            const data = doc.data() as any;
+            return {
+                id: doc.id,
+                fullName: data.fullName || 'Sin Nombre',
+                identityDocument: data.identityDocument || '---',
+                loanAmount: data.loanAmount || 0,
+                date: data.lastModified ? new Date(data.lastModified).toLocaleDateString() : '---',
+                status: data.review?.committeeDecision || 'En Proceso',
+                userId: data.userId,
+                userRegion: data.userRegion,
+                userAgency: data.userAgency
+            };
         });
-
-        // Client side sort for non-admin queries to avoid index issues initially
+        
         if (user.rol !== 'admin') {
            apps.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         }
@@ -167,9 +159,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onCreateNew, onSelectApplic
                       </span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                       {/* For this demo, selecting implies editing/viewing. Usually split by permission */}
                        <button 
-                         onClick={() => onSelectApplication(app.id)} // In a real app, verify edit permissions
+                         onClick={() => onSelectApplication(app.id)}
                          className="text-blue-600 hover:text-blue-800 font-medium text-xs flex items-center justify-end ml-auto"
                        >
                          <FileText className="w-4 h-4 mr-1"/>

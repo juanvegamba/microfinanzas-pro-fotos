@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { ShoppingBag, Truck, Home, Car, Package, Plus, Trash2, AlertOctagon, Calculator, Printer, FileDown, FileUp, Loader2 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
@@ -35,10 +34,17 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
     updateData('inventory', data.inventory.filter(i => i.id !== id));
   };
 
+  const clearInventory = () => {
+    if (window.confirm('¿Estás seguro de que quieres borrar todo el inventario? Esta acción no se puede deshacer.')) {
+      updateData('inventory', []);
+    }
+  };
+
   // --- AI INVENTORY IMPORT ---
   const handleInventoryFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
+      // Validate type: image or pdf
       if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
           alert("Solo se permiten imágenes o PDF.");
           return;
@@ -48,10 +54,12 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
       try {
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
+        // Helper to convert file to base64
         const base64Data = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => {
                 const result = reader.result as string;
+                // Remove data URL prefix (e.g., "data:image/jpeg;base64,")
                 const base64 = result.split(',')[1]; 
                 resolve(base64);
             };
@@ -59,15 +67,18 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
             reader.readAsDataURL(file);
         });
 
-        const prompt = `Analiza este documento (PDF o Imagen) que contiene una lista de inventario. Extrae los items en una lista JSON. 
-        Campos requeridos por item: 
-        - name (nombre del producto)
-        - unit (unidad de medida ej: lb, unidad, par)
-        - stockQty (cantidad existente, número)
-        - purchasePrice (precio de costo unitario, número)
-        - salePrice (precio de venta unitario, número)
+        const prompt = `Analiza este documento (PDF o Imagen) que contiene una lista de inventario en forma de tabla, posiblemente extendiéndose a múltiples páginas. Extrae todos los items de la tabla en todas las páginas, ignorando resúmenes o totales. La tabla tiene encabezados como 'ID', 'Producto', 'Unidad', 'Cant.', 'P. Compra', 'P. Venta', 'Margen Uni.', 'Cant. por Compra', 'Valor Inventario', 'Rotación Mensual', 'Total Compra', 'Total Venta', 'Total Margen', '% Margen'. Ignora columnas calculadas como 'Valor Inventario', 'Total Compra', etc. Extrae solo los ítems de inventario válidos.
+
+Campos requeridos por item (usa exactamente estos nombres y tipos; si un campo falta o no es claro, usa 0 para números o cadena vacía para texto): 
+- name (nombre del producto de la columna 'Producto', string)
+- unit (unidad de medida de la columna 'Unidad', ej: lb, unidad, par, lata, botella; string)
+- stockQty (cantidad existente de la columna 'Cant.', número)
+- purchasePrice (precio de costo unitario de la columna 'P. Compra', número)
+- salePrice (precio de venta unitario de la columna 'P. Venta', número)
+- purchaseQty (cantidad por compra de la columna 'Cant. por Compra', número)
+- purchaseFrequency (frecuencia de compra de la columna 'Rotación Mensual', número)
         
-        Si algún dato numérico no es claro, usa 0. Trata de inferir la unidad.`;
+Si algún dato numérico no es claro o falta, usa 0. Trata de inferir la unidad si no está explícita. Devuelve solo un array JSON válido de objetos, sin texto adicional.`;
 
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
@@ -92,12 +103,15 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
                             stockQty: { type: Type.NUMBER },
                             purchasePrice: { type: Type.NUMBER },
                             salePrice: { type: Type.NUMBER },
+                            purchaseQty: { type: Type.NUMBER },
+                            purchaseFrequency: { type: Type.NUMBER },
                         }
                     }
                 }
             }
         });
 
+        // CRITICAL FIX: Sanitize Markdown blocks from AI response
         let jsonString = response.text || "[]";
         jsonString = jsonString.replace(/```json/g, '').replace(/```/g, '').trim();
 
@@ -110,18 +124,19 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
             stockQty: i.stockQty || '',
             purchasePrice: i.purchasePrice || '',
             salePrice: i.salePrice || '',
-            purchaseQty: '',
-            purchaseFrequency: ''
+            purchaseQty: i.purchaseQty || '',
+            purchaseFrequency: i.purchaseFrequency || ''
         }));
 
         updateData('inventory', [...data.inventory, ...newInventoryItems]);
         alert(`Se importaron ${newInventoryItems.length} productos exitosamente.`);
 
-      } catch (error: any) {
+      } catch (error) {
           console.error("Error parsing inventory:", error);
-          alert(`No se pudo procesar el inventario: ${error.message}`);
+          alert("No se pudo procesar el inventario. Intente con una imagen más clara o un formato diferente.");
       } finally {
           setAiLoading(false);
+          // Reset input
           e.target.value = '';
       }
     }
@@ -185,6 +200,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
 
   // --- CALCULATIONS ---
   
+  // 1. Inventory Totals
   const totalInventoryValue = data.inventory.reduce((sum, item) => {
     return sum + ((typeof item.stockQty === 'number' && typeof item.purchasePrice === 'number') ? item.stockQty * item.purchasePrice : 0);
   }, 0);
@@ -203,6 +219,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
     return sum + val;
   }, 0);
 
+  // 2. Section 3 Average Sales (Re-calculated here as it's not stored computed)
   const calculateSection3Sales = () => {
     const calcType = (amount: number | '', freq: number | '') => {
       return (typeof amount === 'number' ? amount : 0) * (typeof freq === 'number' ? freq : 0);
@@ -214,10 +231,12 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
   };
   const section3AvgSales = calculateSection3Sales();
 
+  // 3. Difference Analysis
   const salesDifference = totalEstimatedMonthlySales - section3AvgSales;
   const salesDifferencePercent = section3AvgSales > 0 ? (salesDifference / section3AvgSales) * 100 : 0;
   const isAlert = Math.abs(salesDifferencePercent) > 35;
 
+  // 4. Asset Totals
   const totalRealEstate = data.realEstateAssets.reduce((sum, item) => sum + (typeof item.estimatedValue === 'number' ? item.estimatedValue : 0), 0);
   const totalVehicles = data.vehicleAssets.reduce((sum, item) => sum + (typeof item.estimatedValue === 'number' ? item.estimatedValue : 0), 0);
   const totalOtherAssets = data.otherAssets.reduce((sum, item) => sum + (typeof item.estimatedValue === 'number' ? item.estimatedValue : 0), 0);
@@ -231,6 +250,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8">
       
+      {/* Header */}
       <div className="pb-4 border-b border-gray-200 flex justify-between items-end print:hidden">
         <div>
           <h2 className="text-2xl font-bold text-gray-800 flex items-center">
@@ -240,6 +260,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 1. Inventario Detallado */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <div className="flex justify-between items-start mb-4">
             <div>
@@ -251,6 +272,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
                 Liste los productos más importantes o cargue una lista desde PDF/Imagen.
                 </p>
             </div>
+            {/* AI Import Button */}
             <div className="print:hidden">
                 <label className={`flex items-center px-4 py-2 rounded-md text-sm font-medium text-white cursor-pointer transition-colors ${aiLoading ? 'bg-gray-400 cursor-wait' : 'bg-purple-600 hover:bg-purple-700'}`}>
                     {aiLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <FileUp className="w-4 h-4 mr-2" />}
@@ -268,6 +290,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
 
         <div className="space-y-6">
           {data.inventory.map((item) => {
+             // Item Calculations
              const costPercent = (typeof item.purchasePrice === 'number' && typeof item.salePrice === 'number' && item.salePrice > 0)
                ? (item.purchasePrice / item.salePrice) * 100
                : 0;
@@ -344,11 +367,17 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
               </div>
              );
           })}
-          <button onClick={addInventoryItem} className="text-sm text-blue-600 font-medium hover:underline flex items-center">
-            <Plus className="w-4 h-4 mr-1" /> Agregar Artículo
-          </button>
+          <div className="flex space-x-4">
+            <button onClick={addInventoryItem} className="text-sm text-blue-600 font-medium hover:underline flex items-center">
+              <Plus className="w-4 h-4 mr-1" /> Agregar Artículo
+            </button>
+            <button onClick={clearInventory} className="text-sm text-red-600 font-medium hover:underline flex items-center">
+              <Trash2 className="w-4 h-4 mr-1" /> Borrar Todo el Inventario
+            </button>
+          </div>
         </div>
 
+        {/* Inventory Totals & Analysis */}
         <div className="mt-8 bg-blue-50 p-6 rounded-lg border border-blue-100">
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
@@ -386,6 +415,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 2. Proveedores */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <Truck className="w-5 h-5 mr-2" />
@@ -422,6 +452,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 3. Activos: Bienes Inmuebles */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <Home className="w-5 h-5 mr-2" />
@@ -483,6 +514,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 4. Activos: Vehículos */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <Car className="w-5 h-5 mr-2" />
@@ -532,6 +564,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 5. Activos: Otros */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <div className="flex items-center mb-4">
           <Package className="w-5 h-5 mr-2 text-brand-primary" />
@@ -576,6 +609,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 6. Resumen Total de Activos */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
          <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
             <Calculator className="w-5 h-5 mr-2" />
@@ -605,6 +639,7 @@ const SectionFour: React.FC<SectionFourProps> = ({ data, updateData }) => {
          </div>
       </div>
 
+      {/* Footer Actions */}
       <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200 print:hidden">
          <button 
            onClick={handlePrint}

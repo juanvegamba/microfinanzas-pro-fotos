@@ -2,27 +2,8 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MicroFinanzas Pro</title>
-    <!-- MANTENIDO: CDN de Tailwind es esencial para que la aplicación se vea bien inmediatamente -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              brand: {
-                primary: '#1e3a8a',
-                secondary: '#1d4ed8',
-                accent: '#dc2626',
-                surface: '#f3f4f6',
-              }
-            }
-          }
-        }
-      }
-    </script>
   <script type="importmap">
 {
   "imports": {
@@ -42,6 +23,5 @@
   <body class="bg-gray-100 text-gray-900 font-sans antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-  <script type="module" src="/index.tsx"></script>
-</body>
+  </body>
 </html>

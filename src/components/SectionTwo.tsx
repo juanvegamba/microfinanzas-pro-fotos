@@ -10,6 +10,7 @@ interface SectionTwoProps {
 
 const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
   
+  // Calculate derived values
   const currentYear = new Date().getFullYear();
   const businessAge = data.yearCreated ? currentYear - data.yearCreated : 0;
   
@@ -19,6 +20,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
     (typeof data.familyEmployees === 'number' ? data.familyEmployees : 0)
   );
 
+  // Calculate Score
   const totalScore = 
     data.diversificationScore + 
     data.profitabilityKnowledgeScore + 
@@ -29,6 +31,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
   const maxScore = 13;
   const scorePercentage = (totalScore / maxScore) * 100;
 
+  // Gauge Color Logic
   let gaugeColor = 'text-red-500';
   let gaugeLabel = 'Bajo';
   if (scorePercentage >= 66) {
@@ -46,11 +49,13 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8">
       
+      {/* Header */}
       <div className="pb-4 border-b border-gray-200 print:hidden">
         <h2 className="text-2xl font-bold text-gray-800">Sección 2. Empresa</h2>
         <p className="text-gray-500 mt-1">Análisis de recursos, riesgos, capacidad empresarial y empleo.</p>
       </div>
 
+      {/* 1. Origen y Uso de Recursos */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <History className="w-5 h-5 mr-2" />
@@ -90,6 +95,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 2. Análisis de Riesgos y Oportunidades */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <AlertTriangle className="w-5 h-5 mr-2" />
@@ -129,6 +135,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 3. Evaluación Cualitativa */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <TrendingUp className="w-5 h-5 mr-2" />
@@ -182,6 +189,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
               value={data.investmentPlanQualityScore}
               onChange={(e) => updateData('investmentPlanQualityScore', parseInt(e.target.value))}
             >
+               {/* Prompt says 1, 2, 3 points. Defaulting 0 to handle empty state if needed, but initializing to 1 */}
               <option value={1}>1 Puntos: Poco clara</option>
               <option value={2}>2 Puntos: Regular</option>
               <option value={3}>3 Puntos: Buena</option>
@@ -204,6 +212,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 4. Activos y Antigüedad */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <Calculator className="w-5 h-5 mr-2" />
@@ -254,6 +263,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 5. Empleo */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <Users className="w-5 h-5 mr-2" />
@@ -312,6 +322,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+       {/* 6. Otros Detalles */}
        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <Leaf className="w-5 h-5 mr-2" />
@@ -344,6 +355,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
         </div>
       </div>
 
+      {/* 7. Resumen y Observaciones */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 break-inside-avoid">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <BarChart3 className="w-5 h-5 mr-2" />
@@ -351,8 +363,11 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
         </h3>
         
         <div className="flex flex-col md:flex-row gap-8 items-center mb-6">
+          {/* Gauge Visualization */}
           <div className="relative w-48 h-32 flex justify-center overflow-hidden">
+             {/* Semi Circle Background */}
             <div className="absolute w-40 h-40 bg-gray-200 rounded-full top-0"></div>
+             {/* Mask to make it a border */}
             <div className="absolute w-32 h-32 bg-white rounded-full top-4 z-10 flex items-end justify-center pb-4">
                 <div className="text-center">
                     <span className={`text-3xl font-bold ${gaugeColor}`}>{scorePercentage.toFixed(0)}%</span>
@@ -367,7 +382,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
                   className={gaugeColor}
                   stroke="currentColor" 
                   strokeWidth="10" 
-                  strokeDasharray={`${scorePercentage * 1.26} 126`} 
+                  strokeDasharray={`${scorePercentage * 1.26} 126`} // 126 is approx length of arc r=40
                 />
              </svg>
           </div>
@@ -398,6 +413,7 @@ const SectionTwo: React.FC<SectionTwoProps> = ({ data, updateData }) => {
           </div>
       </div>
 
+      {/* Footer Actions */}
       <div className="flex justify-end space-x-4 pt-6 border-t border-gray-200 print:hidden">
          <button 
            onClick={handlePrint}

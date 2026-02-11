@@ -1,4 +1,9 @@
 
+export interface GpsPoint {
+  lat: number;
+  lng: number;
+}
+
 export type MaritalStatus = 'Soltero(a)' | 'Casado(a)' | 'Unido(a)' | 'Divorciado(a)' | 'Viudo(a)' | '';
 export type HousingType = 'Propio' | 'Alquilado' | 'De Familiares' | 'De Terceros' | '';
 export type BusinessLocationType = 'Fija' | 'Ambulante' | '';
@@ -74,7 +79,7 @@ export interface ExistingDebt {
   currentBalance: number | '';
   monthlyQuota: number | '';
   type: 'Del Negocio' | 'De la Casa/Familia' | '';
-  consolidate?: boolean; // Campo para marcar si se consolida con el nuevo crédito
+  consolidate?: boolean;
 }
 
 // --- SECTION 4 TYPES ---
@@ -86,7 +91,7 @@ export interface InventoryItem {
   purchasePrice: number | '';
   salePrice: number | '';
   purchaseQty: number | '';
-  purchaseFrequency: number | ''; // Monthly frequency
+  purchaseFrequency: number | '';
 }
 
 export interface Supplier {
@@ -133,9 +138,9 @@ export interface RealGuarantee {
   description: string;
   status: string;
   registryNumber: string;
-  vehicleYear: number | ''; // Only if type is vehicle
-  constructionArea: number | ''; // Only if type is mortgage
-  landArea: number | ''; // Only if type is mortgage
+  vehicleYear: number | '';
+  constructionArea: number | '';
+  landArea: number | '';
   comments: string;
 }
 
@@ -176,11 +181,11 @@ export type PhotoCategory =
 
 export interface ClientPhoto {
   id: string;
-  url: string; // Base64 data URL
+  url: string; // Firebase Storage URL
   category: PhotoCategory;
   comment: string;
   timestamp: string;
-  gps: { lat: number; lng: number } | null;
+  gps: GpsPoint | null;
 }
 
 export interface DocumentChecklist {
@@ -200,57 +205,50 @@ export interface SupervisionData {
   visitDate: string;
   visitTime: string;
   visitPlace: string;
-  visitGps: { lat: number; lng: number } | null;
+  visitGps: GpsPoint | null;
 
-  // Semáforo
   salesEvolution: 'Aumentaron' | 'Estables' | 'Disminuyeron' | '';
   inventoryLevel: 'Alto/Lleno' | 'Medio' | 'Bajo/Escaso' | 'Obsoleto' | '';
   businessOwnership: 'Del solicitante' | 'De otra persona' | 'No se pudo identificar' | '';
 
-  // Riesgos
   willingnessToPay: 'Buena' | 'Regular' | 'Mala' | '';
   guaranteeStatus: 'Bueno' | 'Regular' | 'Malo' | '';
   guaranteeComment: string;
   riskLevel: 'Bajo' | 'Medio' | 'Alto' | '';
 
-  // Capacidad (Weekly)
   weeklySales: number | '';
   weeklyCosts: number | '';
   weeklyFamilyExpenses: number | '';
 
-  // Uso de Fondos
   loanUseCheck: 'SI' | 'NO' | 'No Aplicable' | '';
   investmentStatus: 'Bueno' | 'Regular' | 'Malo' | '';
   evidenceDescription: string;
 
-  // Fotos Supervisión
   photos: ClientPhoto[];
 
-  // Conclusion
   conclusion: string;
+  visitVerification?: string;
+  crossInfoValidation?: string;
+  capacityValidation?: string;
 }
 
 // --- SECTION 9 TYPES ---
 export interface ReviewData {
-  // AI Analysis
   debtReasonabilityAnalysis: string;
   sixCsAnalysis: string;
 
-  // Officer Opinion
   officerRisks: string;
   officerOpportunities: string;
   officerMitigation: string;
   officerRecommendations: string;
 
-  // Comments
   commentsOfficial: string;
   commentsAgencyManager: string;
   commentsSupervisor: string;
 
-  // Committee Decision
   committeeDecision: 'Aprobado' | 'Aprobado con modificaciones' | 'Postergado' | 'Rechazado' | '';
+  committeeComments: string;
   
-  // Approved Conditions (Editable)
   approvedAmount: number | '';
   approvedDestination: string;
   approvedPaymentMethod: string;
@@ -260,19 +258,17 @@ export interface ReviewData {
   approvedGuaranteeDescription: string;
   approvedSpecialConditions: string;
   
-  // Signatures
   approverNames: string;
   approvalDate: string;
+  reviewGps: GpsPoint | null;
 }
 
 export interface ClientData {
   // --- SECTION 1: DATOS ---
-  // Official Details
   officialName: string;
   branch: string;
   operationNumber: string;
 
-  // Personal Info
   fullName: string;
   identityDocument: string;
   dateOfBirth: string;
@@ -285,87 +281,76 @@ export interface ClientData {
   yearsInHousing: number | '';
   businessPremiseType: HousingType;
 
-  // Business Info (Section 1)
   businessName: string;
   businessType: string;
   businessSectors: BusinessSector[];
+  yearsInBusiness: number | '';
   monthlyPaymentCapacity: number | '';
 
-  // Location & Contact
   homeAddress: string;
   businessAddress: string;
   locationType: BusinessLocationType;
-  gpsCoordinates: { lat: number; lng: number } | null;
+  gpsCoordinates: { lat: number; lng: number } | null; // Legacy field
+  homeGps: GpsPoint | null;
+  businessGps: GpsPoint | null;
   contactName: string;
   contactPhone: string;
 
   // --- SECTION 2: EMPRESA ---
-  // Origen y Uso de Recursos
   businessOrigin: string;
   recentProfitsUse: string;
   reinvestedAmount: number | '';
 
-  // Análisis de Riesgos
   clientRisks: string;
   mitigationMeasures: string;
   businessOpportunities: string;
 
-  // Evaluación Cualitativa (Scores)
-  diversificationScore: number; // 0-3
-  profitabilityKnowledgeScore: number; // 0-2
-  operationsManagementScore: number; // 0-2
-  investmentPlanQualityScore: number; // 1-3
-  successionPlanningScore: number; // 0-3
+  diversificationScore: number;
+  profitabilityKnowledgeScore: number;
+  operationsManagementScore: number;
+  investmentPlanQualityScore: number;
+  successionPlanningScore: number;
 
-  // Activos y Antigüedad
   fixedAssetsValue: number | '';
   inventoryValue: number | '';
   yearCreated: number | '';
   yearFormalized: number | '';
 
-  // Empleo
   employeesFullTime: number | '';
   employeesPartTime: number | '';
   employeesFullTimeLastYear: number | '';
   employeesPartTimeLastYear: number | '';
   familyEmployees: number | '';
   
-  // Otros Detalles
-  salesGrowth: number | ''; // Percentage
+  salesGrowth: number | '';
   socialEnvGoals: string;
 
-  // Resumen Sección 2
   businessObservations: string;
 
   // --- SECTION 3: CAPACIDAD ---
-  // Loan Details
   loanAmount: number | '';
   loanDestination: LoanDestination;
   loanDestinationDetail: string;
-  loanTerm: number | ''; // Months
-  loanInterestRate: number | ''; // Annual %
+  loanTerm: number | '';
+  loanInterestRate: number | '';
   loanPaymentMethod: PaymentMethod;
-  loanCommission: number | ''; // %
+  loanCommission: number | '';
   loanCommissionFinancing: CommissionType;
 
-  // Disbursement Plan
   disbursementPlan: DisbursementDetail[];
 
-  // Sales Profile
   salesGood: SalesProfile;
   salesRegular: SalesProfile;
   salesBad: SalesProfile;
 
-  // Seasonality
-  lowSalesMonths: string[]; // Array of month names
-  lowSalesReduction: number | ''; // %
-  highSalesMonths: string[]; // Array of month names
-  highSalesIncrease: number | ''; // %
-  salesCreditPercentage: number | ''; // % Sales on Credit
-  salesCreditTerm: number | ''; // Days
+  lowSalesMonths: string[];
+  lowSalesReduction: number | '';
+  highSalesMonths: string[];
+  highSalesIncrease: number | '';
+  salesCreditPercentage: number | '';
+  salesCreditTerm: number | '';
 
-  // Operating Costs
-  costOfGoodsSold: number | ''; // % CMV
+  costOfGoodsSold: number | '';
   expensesEmployees: number | '';
   expensesRent: number | '';
   expensesUtilities: number | '';
@@ -373,24 +358,20 @@ export interface ClientData {
   expensesMaintenance: number | '';
   otherBusinessExpenses: OtherExpense[];
 
-  // Variable Income/Expenses (Annual)
   variableItems: VariableItem[];
 
-  // Family Expenses
   familyIncome: number | '';
   familyFood: number | '';
   familyTransport: number | '';
   familyEducation: number | '';
   familyUtilities: number | '';
-  familyComms: number | ''; // Phone/Internet
+  familyComms: number | '';
   familyHealth: number | '';
   familyOther: number | '';
 
-  // Investments & Debts
   plannedInvestment: number | '';
   existingDebts: ExistingDebt[];
 
-  // Context & Experience
   capacityObservations: string;
   creditExperience: CreditExperience;
 
@@ -404,6 +385,8 @@ export interface ClientData {
   // --- SECTION 5: GARANTIAS ---
   realGuarantees: RealGuarantee[];
   fiduciaryGuarantees: FiduciaryGuarantee[];
+  guaranteeType?: string;
+  guaranteeCoverage?: number | '';
 
   // --- SECTION 6: CARACTER ---
   characterRefScore: number;

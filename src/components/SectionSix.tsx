@@ -43,23 +43,21 @@ const SectionSix: React.FC<SectionSixProps> = ({ data, updateData }) => {
 
   // Gauge Color Logic
   let gaugeColor = 'text-red-500';
-  let gaugeLabel = 'Bajo';
   if (scorePercentage >= 80) {
     gaugeColor = 'text-green-500';
-    gaugeLabel = 'Excelente';
   } else if (scorePercentage >= 60) {
     gaugeColor = 'text-blue-500';
-    gaugeLabel = 'Bueno';
   } else if (scorePercentage >= 40) {
     gaugeColor = 'text-yellow-500';
-    gaugeLabel = 'Regular';
   }
 
+  // Gauge SVG Calculation
   const strokeDashArray = `${(scorePercentage / 100) * 126} 126`;
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8">
       
+      {/* Header */}
       <div className="pb-4 border-b border-gray-200">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center">
           Sección 6. Carácter y Reputación
@@ -76,6 +74,7 @@ const SectionSix: React.FC<SectionSixProps> = ({ data, updateData }) => {
 
         <div className="space-y-6">
           
+          {/* a) Calidad de Referencias */}
           <div className="border-b border-gray-100 pb-4">
              <div className="flex justify-between items-center mb-2">
                <label className="block text-sm font-bold text-gray-800">a) Calidad de Referencias Personales y Comerciales</label>
@@ -94,6 +93,7 @@ const SectionSix: React.FC<SectionSixProps> = ({ data, updateData }) => {
              </select>
           </div>
 
+          {/* b) Historial de Pagos */}
           <div className="border-b border-gray-100 pb-4">
              <div className="flex justify-between items-center mb-2">
                <label className="block text-sm font-bold text-gray-800">b) Historial de Pagos</label>
@@ -113,6 +113,7 @@ const SectionSix: React.FC<SectionSixProps> = ({ data, updateData }) => {
              </select>
           </div>
 
+          {/* c) Manejo de Deudas Informales */}
           <div className="border-b border-gray-100 pb-4">
              <div className="flex justify-between items-center mb-2">
                <label className="block text-sm font-bold text-gray-800">c) Manejo de Deudas Informales</label>
@@ -129,6 +130,7 @@ const SectionSix: React.FC<SectionSixProps> = ({ data, updateData }) => {
              </select>
           </div>
 
+          {/* d) Transparencia y Colaboración */}
           <div>
              <div className="flex justify-between items-center mb-2">
                <label className="block text-sm font-bold text-gray-800">d) Transparencia y Colaboración en Entrevista</label>
@@ -147,6 +149,7 @@ const SectionSix: React.FC<SectionSixProps> = ({ data, updateData }) => {
              </select>
           </div>
 
+          {/* Total */}
           <div className="bg-gray-50 p-3 rounded-md flex justify-between items-center border-t-2 border-gray-200 mt-4">
              <span className="font-bold text-gray-700">Total Puntos Evaluación Cuantitativa:</span>
              <span className={`text-xl font-bold ${totalCharacterScore < 0 ? 'text-red-600' : 'text-brand-primary'}`}>
@@ -233,8 +236,11 @@ const SectionSix: React.FC<SectionSixProps> = ({ data, updateData }) => {
         </h3>
 
         <div className="flex flex-col md:flex-row gap-8 items-center mb-8 border-b border-gray-100 pb-6">
+          {/* Gauge Visualization */}
           <div className="relative w-48 h-32 flex justify-center overflow-hidden shrink-0">
+             {/* Semi Circle Background */}
             <div className="absolute w-40 h-40 bg-gray-200 rounded-full top-0"></div>
+             {/* Mask */}
             <div className="absolute w-32 h-32 bg-white rounded-full top-4 z-10 flex items-end justify-center pb-4">
                 <div className="text-center">
                     <span className={`text-3xl font-bold ${gaugeColor}`}>{totalCharacterScore}</span>
@@ -269,7 +275,7 @@ const SectionSix: React.FC<SectionSixProps> = ({ data, updateData }) => {
                 </span>
              </div>
              <div className="bg-gray-50 p-3 rounded text-xs text-gray-500 italic">
-                Nota: El puntaje puede ser negativo si existen antecedentes graves (atrasos &gt; 30 días, malas referencias, falta de transparencia).
+                Nota: El puntaje puede ser negativo si existen antecedentes graves (atrasos mayor a 30 días, malas referencias, falta de transparencia).
              </div>
           </div>
         </div>

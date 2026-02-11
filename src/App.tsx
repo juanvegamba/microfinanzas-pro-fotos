@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
-import { UserProfile, ClientData } from './types';
+import { UserProfile, ClientData, ReviewData } from './types';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import AdminPanel from './components/AdminPanel';
@@ -21,7 +21,6 @@ import SectionSix from './components/SectionSix';
 import SectionSeven from './components/SectionSeven';
 import SectionEight from './components/SectionEight';
 import SectionNine from './components/SectionNine';
-import SectionTen from './components/SectionTen';
 
 // Initial Data Structure
 const initialClientData: ClientData = {
@@ -48,6 +47,8 @@ const initialClientData: ClientData = {
   businessAddress: '',
   locationType: '',
   gpsCoordinates: null,
+  homeGps: null,
+  businessGps: null,
   contactName: '',
   contactPhone: '',
   
@@ -75,6 +76,7 @@ const initialClientData: ClientData = {
   salesGrowth: '',
   socialEnvGoals: '',
   businessObservations: '',
+  yearsInBusiness: '',
 
   // Section 3
   loanAmount: '',
@@ -126,6 +128,8 @@ const initialClientData: ClientData = {
   // Section 5
   realGuarantees: [],
   fiduciaryGuarantees: [],
+  guaranteeType: '',
+  guaranteeCoverage: '',
 
   // Section 6
   characterRefScore: 0, 
@@ -184,6 +188,7 @@ const initialClientData: ClientData = {
     commentsAgencyManager: '',
     commentsSupervisor: '',
     committeeDecision: '',
+    committeeComments: '',
     approvedAmount: '',
     approvedDestination: '',
     approvedPaymentMethod: '',
@@ -193,27 +198,24 @@ const initialClientData: ClientData = {
     approvedGuaranteeDescription: '',
     approvedSpecialConditions: '',
     approverNames: '',
-    approvalDate: ''
+    approvalDate: '',
+    reviewGps: null
   }
 };
 
 type ViewState = 'login' | 'dashboard' | 'form' | 'admin';
 
 function App() {
-  // Auth State
   const [user, setUser] = useState<UserProfile | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   
-  // Navigation State
   const [currentView, setCurrentView] = useState<ViewState>('login');
   
-  // Form State
   const [currentStep, setCurrentStep] = useState(1);
   const [clientData, setClientData] = useState<ClientData>(initialClientData);
-  // CRITICAL FIX: Anchor the ID so updates don't create duplicate documents if operationNumber changes
   const [activeDocId, setActiveDocId] = useState<string | null>(null);
+  const [isTabLocked, setTabLocked] = useState(false);
 
-  // Connectivity State
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -232,24 +234,20 @@ function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Fetch Extended User Profile
         const docRef = doc(db, "usuarios", firebaseUser.uid);
         try {
           const docSnap = await getDoc(docRef);
           
           if (docSnap.exists()) {
             const profile = docSnap.data() as UserProfile;
-            // Security check: Access Control Layer
             if (profile.status === 'activo') {
               setUser(profile);
               setCurrentView('dashboard');
             } else {
-              // User exists but is not active. Deny access.
               console.warn(`Access Denied: User ${firebaseUser.uid} is ${profile.status}`);
               setUser(null);
             }
           } else {
-            // Document missing. Potential race condition or registration incomplete.
             console.log("Usuario autenticado pero sin perfil (posible registro en curso).");
             setUser(null);
           }
@@ -267,11 +265,20 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  // QA IMPROVEMENT: Generic type safety ensures 'field' exists in ClientData and 'value' matches the type of that field.
   const updateClientData = <K extends keyof ClientData>(field: K, value: ClientData[K]) => {
     setClientData(prev => ({
       ...prev,
       [field]: value
+    }));
+  };
+
+  const updateReviewData = (field: keyof ReviewData, value: any) => {
+    setClientData(prev => ({
+      ...prev,
+      review: {
+        ...prev.review,
+        [field]: value
+      }
     }));
   };
 
@@ -282,13 +289,9 @@ function App() {
     }
 
     try {
-      // 1. Generate Document ID Strategy (Stabilized)
-      // If we already have an activeDocId (loaded or previously saved), use it.
-      // Otherwise, generate one from operationNumber/identity/timestamp.
       let docId = activeDocId;
 
       if (!docId) {
-        // First save logic
         if (clientData.operationNumber && String(clientData.operationNumber).trim() !== '') {
            docId = String(clientData.operationNumber).trim();
         } else if (clientData.identityDocument && String(clientData.identityDocument).trim() !== '') {
@@ -296,31 +299,25 @@ function App() {
         } else {
            docId = "borrador_" + Date.now();
         }
-        // Sanitization
         docId = docId.replace(/\//g, '_');
       }
 
       const docRef = doc(db, "applications", docId!);
       
-      // 2. Construct the Full Payload (Data + Metadata)
       const fullPayload = {
         ...clientData,
         userId: user.uid || auth.currentUser?.uid || "unknown_user",
         userRegion: user.region ?? 0, 
         userAgency: user.agencia ?? 0,
         lastModified: new Date().toISOString(),
-        // Audit Trail
         updatedBy: user.email,
         appVersion: "1.0.2-stable" 
       };
 
-      // 3. Deep Sanitization
       const cleanPayload = JSON.parse(JSON.stringify(fullPayload));
 
-      // 4. Save to Firestore
       await setDoc(docRef, cleanPayload, { merge: true });
       
-      // 5. Update State anchor
       setActiveDocId(docId);
 
       if (!silent) {
@@ -340,9 +337,9 @@ function App() {
   };
 
   const changeStep = async (newStep: number) => {
+    if (isTabLocked) return;
     if (newStep === currentStep) return;
     
-    // Auto-save before changing step (Cumulative Save)
     await handleSave(true); 
     
     setCurrentStep(newStep);
@@ -358,7 +355,6 @@ function App() {
   };
 
   const handleCreateNew = () => {
-    // Auto-fill Official Details from Logged User
     const officialName = user?.displayName || '';
     const agencyValue = user?.agencia != null ? String(user.agencia) : '';
 
@@ -367,7 +363,6 @@ function App() {
       officialName: officialName,
       branch: agencyValue
     });
-    // Reset ID anchor for new document
     setActiveDocId(null);
     setCurrentStep(1);
     setCurrentView('form');
@@ -380,7 +375,6 @@ function App() {
         if (docSnap.exists()) {
             const loadedData = docSnap.data();
             setClientData({ ...initialClientData, ...loadedData } as ClientData);
-            // ANCHOR THE ID: Critical to prevent duplication on edit
             setActiveDocId(id);
             setCurrentStep(1);
             setCurrentView('form');
@@ -403,10 +397,9 @@ function App() {
       case 4: return <SectionFour data={clientData} updateData={updateClientData} />;
       case 5: return <SectionFive data={clientData} updateData={updateClientData} />;
       case 6: return <SectionSix data={clientData} updateData={updateClientData} />;
-      case 7: return <SectionSeven data={clientData} updateData={updateClientData} />;
-      case 8: return <SectionEight data={clientData} updateData={updateClientData} />;
+      case 7: return <SectionSeven data={clientData} updateData={updateClientData} setTabLocked={setTabLocked} activeDocId={activeDocId} />;
+      case 8: return <SectionEight data={clientData} updateData={updateClientData} setTabLocked={setTabLocked} activeDocId={activeDocId} />;
       case 9: return <SectionNine data={clientData} updateData={updateClientData} />;
-      case 10: return <SectionTen data={clientData} />;
       default: return <div>Sección no encontrada</div>;
     }
   };
@@ -421,7 +414,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col font-sans">
-      {/* Header is contextual based on view */}
       <Header 
         user={user}
         onLogout={handleLogout}
@@ -458,45 +450,37 @@ function App() {
 
         {currentView === 'form' && (
           <>
-            <Stepper currentStep={currentStep} onStepClick={changeStep} />
+            <Stepper currentStep={currentStep} onStepClick={changeStep} isTabLocked={isTabLocked} />
             <div className="pb-24">
               {renderFormSection()}
               
-              {/* Navigation Buttons */}
-              <div className="max-w-5xl mx-auto px-6 mt-8">
-                <div className="flex justify-between gap-4 pt-6 border-t border-gray-300">
-                  <button 
-                    onClick={() => changeStep(currentStep - 1)}
-                    disabled={currentStep === 1}
-                    className={`flex items-center px-6 py-3 rounded-md font-medium transition-colors shadow-sm ${
-                      currentStep === 1 
-                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
-                        : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
-                    }`}
-                  >
-                    <ArrowLeft className="w-5 h-5 mr-2" />
-                    Anterior
-                  </button>
-                  
-                  {currentStep < 10 ? (
+              {currentStep < 9 && (
+                <div className="max-w-5xl mx-auto px-6 mt-8">
+                  <div className="flex justify-between gap-4 pt-6 border-t border-gray-300">
                     <button 
-                      onClick={() => changeStep(currentStep + 1)}
-                      className="flex items-center px-6 py-3 bg-brand-primary hover:bg-blue-800 text-white rounded-md font-medium transition-colors shadow-sm"
+                      onClick={() => changeStep(currentStep - 1)}
+                      disabled={currentStep === 1 || isTabLocked}
+                      className={`flex items-center px-6 py-3 rounded-md font-medium transition-colors shadow-sm ${currentStep === 1 || isTabLocked
+                          ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
+                          : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                      }`}
                     >
-                      Siguiente
-                      <ArrowRight className="w-5 h-5 ml-2" />
+                      <ArrowLeft className="w-5 h-5 mr-2" />
+                      Anterior
                     </button>
-                  ) : (
+                    
                     <button 
-                      onClick={() => handleSave(false)}
-                      className="flex items-center px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-md font-medium transition-colors shadow-sm"
-                    >
-                      <Save className="w-5 h-5 mr-2" />
-                      Guardar Final
-                    </button>
-                  )}
+                        onClick={() => changeStep(currentStep + 1)}
+                        disabled={isTabLocked}
+                        className={`flex items-center px-6 py-3 rounded-md font-medium transition-colors shadow-sm ${isTabLocked ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-brand-primary hover:bg-blue-800 text-white'
+                        }`}
+                      >
+                        Siguiente
+                        <ArrowRight className="w-5 h-5 ml-2" />
+                      </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </>
         )}

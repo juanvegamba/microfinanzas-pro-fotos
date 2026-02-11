@@ -1,18 +1,56 @@
 
-import React, { useState } from 'react';
-import { ClipboardList, MapPin, AlertTriangle, Camera, Trash2, Scale, CheckCircle2, XCircle, BarChart3, PenTool, Store, ShieldAlert, Wallet, Search } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { auth } from '../firebase';
+import { ClipboardList, MapPin, AlertTriangle, Camera, Trash2, Scale, CheckCircle2, XCircle, BarChart3, PenTool, Store, ShieldAlert, Wallet } from 'lucide-react';
 import { ClientData, SupervisionData, ClientPhoto } from '../types';
 
 interface SectionEightProps {
   data: ClientData;
   updateData: (field: keyof ClientData, value: any) => void;
+  setTabLocked: (locked: boolean) => void;
+  activeDocId: string | null;
 }
 
-const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
+const SectionEight: React.FC<SectionEightProps> = ({ data, updateData, setTabLocked, activeDocId }) => {
   const [gpsLoading, setGpsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [imageWorker, setImageWorker] = useState<Worker | null>(null);
 
-  // --- HELPERS ---
+  const storage = getStorage(auth.app);
+
+  useEffect(() => {
+    const worker = new Worker(new URL('../image-resizer.worker.ts', import.meta.url), { type: 'module' });
+    setImageWorker(worker);
+
+    return () => {
+      worker.terminate();
+    };
+  }, []);
+
+  const resizeWithWorker = (file: File): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      if (!imageWorker) {
+        return reject(new Error("Image processing worker not available."));
+      }
+
+      imageWorker.onmessage = (e: MessageEvent) => {
+        if (e.data.success) {
+          resolve(e.data.blob);
+        } else {
+          reject(new Error(e.data.error));
+        }
+      };
+
+      imageWorker.onerror = (e) => {
+        reject(new Error(`Worker error: ${e.message}`));
+      };
+      
+      imageWorker.postMessage(file);
+    });
+  };
+
   const updateSupervision = (field: keyof SupervisionData, value: any) => {
     updateData('supervision', {
       ...data.supervision,
@@ -43,46 +81,67 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
     }
   };
 
-  // --- PHOTO HELPERS (Supervision specific) ---
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setIsUploading(true);
-      const file = e.target.files[0];
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64String = reader.result as string;
-        if ("geolocation" in navigator) {
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              addPhotoToState(base64String, {
-                lat: position.coords.latitude,
-                lng: position.coords.longitude
-              });
-              setIsUploading(false);
-            },
-            () => {
-              addPhotoToState(base64String, null);
-              setIsUploading(false);
-            },
-            { timeout: 5000 }
-          );
-        } else {
-           addPhotoToState(base64String, null);
-           setIsUploading(false);
-        }
-      };
-      reader.readAsDataURL(file);
+    if (!e.target.files || e.target.files.length === 0) {
+      return;
+    }
+    const file = e.target.files[0];
+    
+    setTabLocked(true);
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const resizedImage = await resizeWithWorker(file);
+      const docId = activeDocId || data.operationNumber || `cliente_${data.identityDocument}` || Date.now();
+      const fileName = `${docId}_${Date.now()}.jpg`;
+      const storageRef = ref(storage, `fotos_clientes/${fileName}`);
+      const uploadTask = uploadBytesResumable(storageRef, resizedImage);
+
+      await new Promise<void>((resolve, reject) => {
+        uploadTask.on('state_changed',
+          (snapshot) => {
+            const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+            setUploadProgress(progress);
+          },
+          (error) => {
+            console.error("Upload failed:", error);
+            alert(`Error al subir la fotografía: ${error.message}`);
+            reject(error);
+          },
+          async () => {
+            try {
+              const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+              addPhotoToState(downloadURL);
+              resolve();
+            } catch (error) {
+               console.error("Getting download URL failed:", error);
+               alert(`Error obteniendo URL de descarga: ${error}`);
+               reject(error);
+            }
+          }
+        );
+      });
+
+    } catch (error) {
+      console.error("Error processing or uploading image:", error);
+      alert(`Ocurrió un error al procesar la imagen: ${error}`);
+    } finally {
+      setIsUploading(false);
+      setTabLocked(false);
+      setUploadProgress(0);
+      e.target.value = '';
     }
   };
 
-  const addPhotoToState = (url: string, gps: { lat: number; lng: number } | null) => {
+  const addPhotoToState = (url: string) => {
     const newPhoto: ClientPhoto = {
       id: Date.now().toString(),
       url,
-      category: 'Otros', // Generic for supervision
+      category: 'Otros', 
       comment: '',
       timestamp: new Date().toLocaleString(),
-      gps: gps
+      gps: null
     };
     updateSupervision('photos', [...data.supervision.photos, newPhoto]);
   };
@@ -95,9 +154,6 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
     updateSupervision('photos', data.supervision.photos.map(p => p.id === id ? { ...p, comment } : p));
   };
 
-  // --- CALCULATIONS ---
-  
-  // 1. Weekly to Monthly Capacity
   const weeklySales = typeof data.supervision.weeklySales === 'number' ? data.supervision.weeklySales : 0;
   const weeklyCosts = typeof data.supervision.weeklyCosts === 'number' ? data.supervision.weeklyCosts : 0;
   const weeklyFamilyExpenses = typeof data.supervision.weeklyFamilyExpenses === 'number' ? data.supervision.weeklyFamilyExpenses : 0;
@@ -105,7 +161,6 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
   const weeklySurplus = weeklySales - weeklyCosts - weeklyFamilyExpenses;
   const monthlySurplus = weeklySurplus * 4.3;
 
-  // 2. Loan Quota (Recalculated from Section 3 data for context)
   const calculateEstimatedQuota = () => {
     const loanAmt = typeof data.loanAmount === 'number' ? data.loanAmount : 0;
     const annualRate = typeof data.loanInterestRate === 'number' ? data.loanInterestRate : 0;
@@ -115,14 +170,12 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
     if (loanAmt === 0 || termMonths === 0) return 0;
     if (monthlyRate === 0) return loanAmt / termMonths;
     
-    // Standard amortization formula
     return (loanAmt * monthlyRate * Math.pow(1 + monthlyRate, termMonths)) / (Math.pow(1 + monthlyRate, termMonths) - 1);
   };
 
   const loanQuota = calculateEstimatedQuota();
   const coverageRatio = loanQuota > 0 ? monthlySurplus / loanQuota : 0;
 
-  // 3. Cross Check Data (From Section 3)
   const calculateSection3MonthlySales = () => {
     const calcType = (amount: number | '', freq: number | '') => {
       return (typeof amount === 'number' ? amount : 0) * (typeof freq === 'number' ? freq : 0);
@@ -134,15 +187,14 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
   };
   
   const sec3Sales = calculateSection3MonthlySales();
-  const estimatedMonthlyIncome = weeklySales * 4.3; // Projected from this section (Sales)
+  const estimatedMonthlyIncome = weeklySales * 4.3;
   const difference = estimatedMonthlyIncome - sec3Sales;
   const diffPercent = sec3Sales > 0 ? (difference / sec3Sales) * 100 : 0;
-  const isConsistent = Math.abs(diffPercent) < 25; // 25% tolerance
+  const isConsistent = Math.abs(diffPercent) < 25;
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-8">
       
-      {/* Header */}
       <div className="pb-4 border-b border-gray-200">
         <h2 className="text-2xl font-bold text-gray-800 flex items-center">
           Sección 8. Supervisión
@@ -150,7 +202,6 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
         <p className="text-gray-500 mt-1">Informe de visita de campo, verificación de riesgos y uso de fondos.</p>
       </div>
 
-      {/* 1. Informe de Supervisión */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center">
           <ClipboardList className="w-5 h-5 mr-2" />
@@ -202,7 +253,6 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
-        {/* 2. NEGOCIO */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
            <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center uppercase">
              <Store className="w-5 h-5 mr-2" />
@@ -243,7 +293,6 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
            </div>
         </div>
 
-        {/* 3. RIESGOS */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
            <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center uppercase">
              <ShieldAlert className="w-5 h-5 mr-2" />
@@ -299,7 +348,6 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
         </div>
       </div>
 
-      {/* 4. CAPACIDAD DE PAGO */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center uppercase">
           <Scale className="w-5 h-5 mr-2" />
@@ -349,7 +397,6 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
         </div>
       </div>
 
-      {/* 5. CRUCE DE INFORMACIÓN */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
          <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center uppercase">
            <BarChart3 className="w-5 h-5 mr-2" />
@@ -377,7 +424,6 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
          </div>
       </div>
 
-      {/* 6. USO DE FONDOS */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
         <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center uppercase">
            <Wallet className="w-5 h-5 mr-2" />
@@ -415,37 +461,29 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
         </div>
       </div>
 
-      {/* 7. FOTOS DE LA SUPERVISIÓN */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
          <h3 className="text-lg font-semibold text-brand-primary mb-4 flex items-center uppercase">
             <Camera className="w-5 h-5 mr-2" />
             Fotos de la Supervisión
          </h3>
          
-         {/* Upload */}
          <div className="mb-6">
              <label className={`inline-flex items-center px-4 py-2 rounded-md shadow-sm text-sm font-medium text-white cursor-pointer transition-colors ${isUploading ? 'bg-gray-400' : 'bg-brand-secondary hover:bg-blue-700'}`}>
-                {isUploading ? 'Procesando...' : '+ Agregar Foto'}
+                {isUploading ? `Subiendo... ${uploadProgress.toFixed(0)}%` : '+ Agregar Foto'}
                 <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={isUploading} />
              </label>
-             <p className="text-xs text-gray-500 mt-2">* Captura automática de coordenadas GPS al subir.</p>
+             {isUploading && (
+                <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                    <div className="bg-blue-600 h-2.5 rounded-full" style={{ width: `${uploadProgress}%` }}></div>
+                </div>
+             )}
          </div>
 
-         {/* Gallery */}
          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {data.supervision.photos.map((photo) => (
                <div key={photo.id} className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50 flex flex-col">
                   <div className="h-40 bg-gray-200 relative">
                      <img src={photo.url} alt="Evidencia" className="w-full h-full object-cover" />
-                     {photo.gps ? (
-                        <div className="absolute bottom-1 right-1 bg-black/60 text-white text-[9px] px-1.5 py-0.5 rounded">
-                           GPS: {photo.gps.lat.toFixed(5)}, {photo.gps.lng.toFixed(5)}
-                        </div>
-                     ) : (
-                        <div className="absolute bottom-1 right-1 bg-red-500 text-white text-[9px] px-1.5 py-0.5 rounded">
-                           Sin GPS
-                        </div>
-                     )}
                   </div>
                   <div className="p-2 flex-grow flex flex-col">
                      <textarea className="w-full text-xs border border-gray-300 rounded p-1 mb-2 resize-none focus:ring-1 focus:ring-brand-primary focus:border-transparent flex-grow"
@@ -463,13 +501,12 @@ const SectionEight: React.FC<SectionEightProps> = ({ data, updateData }) => {
             ))}
             {data.supervision.photos.length === 0 && (
                <div className="col-span-full text-center py-6 text-gray-400 text-sm border-2 border-dashed border-gray-200 rounded">
-                  Arrastre y suelte archivos aquí o haga clic en el botón para agregar fotos.
+                  No hay fotos en esta sección.
                </div>
             )}
          </div>
       </div>
 
-      {/* 8. CONCLUSIÓN */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
          <h3 className="text-lg font-semibold text-brand-primary mb-2 flex items-center uppercase">
             <PenTool className="w-5 h-5 mr-2" />
